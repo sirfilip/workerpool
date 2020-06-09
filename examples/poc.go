@@ -8,17 +8,17 @@ import (
 	"github.com/sirfilip/workerpool"
 )
 
-type Worker struct {
+type Task struct {
 	Name string
 }
 
-func (w Worker) Run(ctx context.Context) error {
-	fmt.Printf("Worker %s Starting\n", w.Name)
+func (t Task) Run(ctx context.Context) error {
+	fmt.Printf("Task %s Starting\n", t.Name)
 	select {
 	case <-ctx.Done():
-		fmt.Printf("Worker %s canceled\n", w.Name)
-	case <-time.After(5 * time.Second):
-		fmt.Printf("Worker %s Finished\n", w.Name)
+		fmt.Printf("Task %s canceled\n", t.Name)
+	case <-time.After(10 * time.Second):
+		fmt.Printf("Task %s Finished\n", t.Name)
 	}
 	return nil
 }
@@ -28,12 +28,12 @@ func main() {
 	ctx := context.Background()
 
 	wp := workerpool.New(10)
-	wp.Start(ctx)
+	wp.Run(ctx)
 
 	for i := 0; i < 20; i++ {
 		time.Sleep(1 * time.Second)
-		worker := Worker{Name: fmt.Sprintf("w%d", i)}
-		err = wp.AddWork(worker)
+		task := Task{Name: fmt.Sprintf("w%d", i)}
+		err = wp.Execute(task)
 		if err != nil {
 			panic(err)
 		}

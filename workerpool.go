@@ -7,45 +7,34 @@ import (
 )
 
 var (
-    WorkerPoolStatusStopped = 0
-    WorkerPoolStatusRunning = 1
-    WorkerPoolStatusStopping = 2
+	WorkerPoolStatusStopped  = 0
+	WorkerPoolStatusRunning  = 1
+	WorkerPoolStatusStopping = 2
 
-    WorkerPoolOperationAbortedError = errors.New("Operation aborted! (could cause invalid state)")
+	WorkerPoolBadCommandError = errors.New("Operation aborted! (could cause invalid state)")
 )
 
+// WorkerPool main engine rensponsible for managing workers
 type WorkerPool struct {
 	sync.Mutex
 	status   int
 	tasks    chan Task
 	capacity int
-	q        context.CancelFunc
+	quit     context.CancelFunc
 	wg       sync.WaitGroup
 }
 
-func (wp *WorkerPool) AddWork(task Task) error {
-	wp.Lock()
-	defer wp.Unlock()
-
-	if wp.status != WorkerPoolStatusRunning {
-		return WorkerPoolOperationAbortedError
-	}
-
-	wp.wg.Add(1)
-	wp.tasks <- task
-	return nil
-}
-
-func (wp *WorkerPool) Start(ctx context.Context) error {
+// Run starts the workers
+func (wp *WorkerPool) Run(ctx context.Context) error {
 	wp.Lock()
 	defer wp.Unlock()
 
 	if wp.status != WorkerPoolStatusStopped {
-		return WorkerPoolOperationAbortedError
+		return WorkerPoolBadCommandError
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	wp.q = cancel
+	wp.quit = cancel
 
 	for i := 0; i < wp.capacity; i++ {
 		workerCtx, _ := context.WithCancel(ctx)
@@ -61,21 +50,37 @@ func (wp *WorkerPool) Start(ctx context.Context) error {
 	return nil
 }
 
+// Execute appends work to the workers queue
+func (wp *WorkerPool) Execute(task Task) error {
+	wp.Lock()
+	defer wp.Unlock()
+
+	if wp.status != WorkerPoolStatusRunning {
+		return WorkerPoolBadCommandError
+	}
+
+	wp.wg.Add(1)
+	wp.tasks <- task
+	return nil
+}
+
+// Shutdown sends cancel signal to workers in the queue
 func (wp *WorkerPool) Shutdown() error {
 	wp.Lock()
 	defer wp.Unlock()
 
 	if wp.status != WorkerPoolStatusRunning {
-		return WorkerPoolOperationAbortedError
+		return WorkerPoolBadCommandError
 	}
 	wp.status = WorkerPoolStatusStopping
+	wp.quit()
 	close(wp.tasks)
-	wp.q()
 	wp.wg.Wait()
 	wp.status = WorkerPoolStatusStopped
 	return nil
 }
 
+// New worker pool constructor
 func New(capacity int) *WorkerPool {
 	return &WorkerPool{
 		wg:       sync.WaitGroup{},
@@ -85,6 +90,7 @@ func New(capacity int) *WorkerPool {
 	}
 }
 
+// Task interface of worker tasks
 type Task interface {
 	Run(ctx context.Context) error
 }
