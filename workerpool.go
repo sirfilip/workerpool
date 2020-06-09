@@ -6,9 +6,13 @@ import (
 	"sync"
 )
 
-var WorkerPoolStatusStopped = 0
-var WorkerPoolStatusRunning = 1
-var WorkerPoolStatusStopping = 2
+var (
+    WorkerPoolStatusStopped = 0
+    WorkerPoolStatusRunning = 1
+    WorkerPoolStatusStopping = 2
+
+    WorkerPoolOperationAbortedError = errors.New("Operation aborted! (could cause invalid state)")
+)
 
 type WorkerPool struct {
 	sync.Mutex
@@ -24,7 +28,7 @@ func (wp *WorkerPool) AddWork(task Task) error {
 	defer wp.Unlock()
 
 	if wp.status != WorkerPoolStatusRunning {
-		return errors.New("Worker pool is not running!")
+		return WorkerPoolOperationAbortedError
 	}
 
 	wp.wg.Add(1)
@@ -37,7 +41,7 @@ func (wp *WorkerPool) Start(ctx context.Context) error {
 	defer wp.Unlock()
 
 	if wp.status != WorkerPoolStatusStopped {
-		return errors.New("Worker pool is already running!")
+		return WorkerPoolOperationAbortedError
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -45,13 +49,12 @@ func (wp *WorkerPool) Start(ctx context.Context) error {
 
 	for i := 0; i < wp.capacity; i++ {
 		workerCtx, _ := context.WithCancel(ctx)
-		go func(ctx context.Context, work chan Task, wg *sync.WaitGroup) {
-			for {
-				task := <-work
+		go func(ctx context.Context, work chan Task, wg *sync.WaitGroup, index int) {
+			for task := range work {
 				task.Run(ctx)
 				wg.Done()
 			}
-		}(workerCtx, wp.tasks, &wp.wg)
+		}(workerCtx, wp.tasks, &wp.wg, i)
 	}
 
 	wp.status = WorkerPoolStatusRunning
@@ -63,9 +66,10 @@ func (wp *WorkerPool) Shutdown() error {
 	defer wp.Unlock()
 
 	if wp.status != WorkerPoolStatusRunning {
-		return errors.New("Worker pool is not running!")
+		return WorkerPoolOperationAbortedError
 	}
 	wp.status = WorkerPoolStatusStopping
+	close(wp.tasks)
 	wp.q()
 	wp.wg.Wait()
 	wp.status = WorkerPoolStatusStopped
