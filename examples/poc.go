@@ -28,7 +28,7 @@ func main() {
 	ctx := context.Background()
 
 	wp := workerpool.New(10)
-	wp.Run(ctx)
+	wp.Start(ctx)
 
 	for i := 0; i < 20; i++ {
 		time.Sleep(1 * time.Second)
@@ -38,6 +38,6 @@ func main() {
 			panic(err)
 		}
 	}
-	wp.Shutdown()
+	wp.Wait()
 	fmt.Println("Done.")
 }

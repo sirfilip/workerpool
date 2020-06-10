@@ -24,8 +24,8 @@ type WorkerPool struct {
 	wg       sync.WaitGroup
 }
 
-// Run starts the workers
-func (wp *WorkerPool) Run(ctx context.Context) error {
+// Start starts the workers
+func (wp *WorkerPool) Start(ctx context.Context) error {
 	wp.Lock()
 	defer wp.Unlock()
 
@@ -64,8 +64,8 @@ func (wp *WorkerPool) Execute(task Task) error {
 	return nil
 }
 
-// Shutdown sends cancel signal to workers in the queue
-func (wp *WorkerPool) Shutdown() error {
+// Stop sends cancel signal to workers in the queue
+func (wp *WorkerPool) Stop() error {
 	wp.Lock()
 	defer wp.Unlock()
 
@@ -74,6 +74,21 @@ func (wp *WorkerPool) Shutdown() error {
 	}
 	wp.status = WorkerPoolStatusStopping
 	wp.quit()
+	close(wp.tasks)
+	wp.wg.Wait()
+	wp.status = WorkerPoolStatusStopped
+	return nil
+}
+
+// Wait sends cancel signal to workers in the queue
+func (wp *WorkerPool) Wait() error {
+	wp.Lock()
+	defer wp.Unlock()
+
+	if wp.status != WorkerPoolStatusRunning {
+		return WorkerPoolBadCommandError
+	}
+	wp.status = WorkerPoolStatusStopping
 	close(wp.tasks)
 	wp.wg.Wait()
 	wp.status = WorkerPoolStatusStopped
